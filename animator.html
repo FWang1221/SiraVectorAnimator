@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>svg bob & sway</title>
+  <style>
+    body { background:#111; color:#fff; font-family:sans-serif; display:flex; flex-direction:column; align-items:center; padding:20px; }
+    #svg-container { width:400px; height:400px; margin-top:20px; }
+    svg { width:100%; height:100%; }
+    input { padding:5px; }
+    #sprite-container { 
+    height: 80vh; 
+    overflow-y: auto; 
+    display: flex; 
+    flex-wrap: wrap; 
+    gap: 4px;
+    border: 1px solid #444;
+    padding: 4px;
+  }
+  .sprite {
+    width: 64px; 
+    height: 64px; 
+    background:#222;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+  }
+  .sprite img {
+    max-width: 100%;
+    max-height: 100%;
+  }
+  </style>
+</head>
+<body>
+  <input type="file" id="fileInput" accept=".svg"/>
+  <div id="svg-container"></div>
+  <div id="sprite-container"></div>
+  <script>
+    const fileInput = document.getElementById("fileInput");
+    const container = document.getElementById("svg-container");
+    const sprite_container = document.getElementById("sprite-container");
+const totalSprites = 3641;
+
+// helper to create sprite div
+function createSprite(i) {
+  const div = document.createElement('div');
+  div.className = 'sprite';
+  div.dataset.index = i;
+
+  const img = document.createElement('img');
+  img.dataset.src = `depixelOutputs/png/spr_crits_battle_centered_${i}.png`;
+  img.alt = `sprite ${i}`;
+  img.loading = "lazy";
+
+  div.appendChild(img);
+
+  // download svg on click
+  div.addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.href = `depixelOutputs/spr_crits_battle_centered_${i}.svg`;
+    link.download = `spr_crits_battle_centered_${i}.svg`;
+    link.click();
+  });
+
+  return div;
+}
+
+// populate sprites
+for(let i = 0; i < totalSprites; i++){
+  const sprite = createSprite(i);
+  sprite_container.appendChild(sprite);
+}
+
+    fileInput.addEventListener("change", e => {
+      const file = e.target.files[0];
+      if(!file) return;
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        let svgText = reader.result
+          .replace(/<\?xml.*?\?>\s*/i, "") // remove xml header
+          .replace(/ns\d+:/g, "")          // remove namespace prefixes
+          .replace(/<svg/, '<svg xmlns="http://www.w3.org/2000/svg"'); // ensure proper namespace
+
+        container.innerHTML = svgText;
+        const svg = container.querySelector("svg");
+        if(!svg) return alert("invalid svg file");
+        animateSvg(svg);
+      };
+      reader.readAsText(file);
+    });
+function animateSvg(svg) {
+  const elems = Array.from(svg.children).map(el => {
+    const bb = el.getBBox();
+    const ex = bb.x + bb.width/2;
+    const ey = bb.y + bb.height/2;
+    return {el, ex, ey, width: bb.width, height: bb.height};
+  });
+
+  const minX = Math.min(...elems.map(e => e.ex));
+  const maxX = Math.max(...elems.map(e => e.ex));
+  const minY = Math.min(...elems.map(e => e.ey));
+  const maxY = Math.max(...elems.map(e => e.ey));
+  const allEx = elems.map(e => e.ex);
+  const cxReal = (Math.min(...allEx) + Math.max(...allEx)) / 2;
+  const cy = (minY + maxY)/2;
+
+  elems.forEach(e => {
+    const dx = e.ex - cxReal;
+    const dy = e.ey - cy;
+
+    // mirrored angle
+    let angleRad = Math.atan2(dy, Math.abs(dx));
+
+    // quantize
+    let deg = Math.round(angleRad * 180/Math.PI / 10) * 10;
+    e.angle = deg * Math.PI / 180;
+
+    // logarithmic vertical attenuation
+    let lin = 1 - (e.ey - minY)/(maxY - minY);
+    lin = Math.max(lin, 0.01);
+    e.relY = Math.log1p(lin * 9) / Math.log1p(10);
+    e.relX = 1 - (e.ex - minX)/(maxX - minX);
+
+    // phase offset: left/right
+    e.phaseOffset = dx >= 0 ? 1 : -1;
+  });
+
+  let t = 0;
+  function animate() {
+    t += 0.1;
+    elems.forEach(e => {
+      const phase = t * e.phaseOffset;
+
+      // base offsets
+      let yOffset = Math.sin(phase + e.angle*2) * 3 * e.relY;
+      let xOffset = Math.cos(phase + e.angle*2) * 1 * e.relY * e.relX;
+
+      // cap offsets by element size
+      yOffset = Math.max(-2*e.height, Math.min(yOffset, 2*e.height));
+      xOffset = Math.max(-2*e.width,  Math.min(xOffset,  2*e.width));
+
+      e.el.setAttribute("transform", `translate(${xOffset},${yOffset})`);
+    });
+    requestAnimationFrame(animate);
+  }
+  animate();
+}
+  </script>
+</body>
+</html>
